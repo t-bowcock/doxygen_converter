@@ -13,3 +13,8 @@ class TestClass:
     @staticmethod
     def test_function(param1: str, param2: int) -> str:
         return param1 * param2
+
+    ## @brief Show indentation works
+    class SubClass:
+        def __init__(self):
+            pass

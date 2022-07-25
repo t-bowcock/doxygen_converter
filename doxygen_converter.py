@@ -12,13 +12,11 @@ import typing
 
 BRIEF = re.compile(r"\s*##\s@brief\s(.*)")
 FUNCTION_DEF = re.compile(r"(\s*)def\s(.*)\(.*:")
-CLASS_DEF = re.compile(r"class\s(.*):")
+CLASS_DEF = re.compile(r"(\s*)class\s(.*):")
 MODULE = re.compile(r"##\s@package\s(.*)")
 OTHER = re.compile(r"\s*#\s\s(.*)")
 DECORATOR = re.compile(r"\s*@.*")
 SHEBANG = re.compile(r"#!.*")
-FUNCTION_INDENT = "        "
-CLASS_INDENT = "    "
 
 
 def file_to_array(file_path: str) -> typing.List[str]:
@@ -104,7 +102,7 @@ class DoxygenConverter:
                 temp = []
                 code.append(line)
             elif CLASS_DEF.match(line) and doxygen_flag:
-                docstrings[CLASS_DEF.match(line)[1]] = temp
+                docstrings[CLASS_DEF.match(line)[2]] = temp
                 doxygen_flag = False
                 temp = []
                 code.append(line)
@@ -116,10 +114,10 @@ class DoxygenConverter:
             elif DECORATOR.match(line) and doxygen_flag:
                 code.append(line)
             elif doxygen_flag:
-                print(line)
                 temp.append(OTHER.match(line)[1])
             else:
                 code.append(line)
+        print(docstrings)
         return (docstrings, code)
 
     @staticmethod
@@ -150,20 +148,26 @@ class DoxygenConverter:
                     code.insert(line_idx + 3 + idx, f"{line}\n")
                 code.insert(line_idx + 3 + len(docstrings["module"]), '"""\n')
             elif FUNCTION_DEF.match(code[line_idx]):
-                if FUNCTION_DEF.match(code[line_idx])[2] in docstrings:
-                    code.insert(line_idx + 1, f'{FUNCTION_INDENT}"""!\n')
-                    for idx, line in enumerate(docstrings[FUNCTION_DEF.match(code[line_idx])[2]]):
-                        code.insert(line_idx + 2 + idx, f"{FUNCTION_INDENT}{line}\n")
+                indent = FUNCTION_DEF.match(code[line_idx])[1] + "    "
+                function = FUNCTION_DEF.match(code[line_idx])[2]
+                if function in docstrings:
+                    code.insert(line_idx + 1, f'{indent}"""!\n')
+                    for idx, line in enumerate(docstrings[function]):
+                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
                     code.insert(
-                        line_idx + 2 + len(docstrings[FUNCTION_DEF.match(code[line_idx])[2]]), f'{FUNCTION_INDENT}"""\n'
+                        line_idx + 2 + len(docstrings[function]),
+                        f'{indent}"""\n',
                     )
             elif CLASS_DEF.match(code[line_idx]):
-                if CLASS_DEF.match(code[line_idx])[1] in docstrings:
-                    code.insert(line_idx + 1, f'{CLASS_INDENT}"""!\n')
-                    for idx, line in enumerate(docstrings[CLASS_DEF.match(code[line_idx])[1]]):
-                        code.insert(line_idx + 2 + idx, f"{CLASS_INDENT}{line}\n")
+                indent = CLASS_DEF.match(code[line_idx])[1] + "    "
+                function = CLASS_DEF.match(code[line_idx])[2]
+                if function in docstrings:
+                    code.insert(line_idx + 1, f'{indent}"""!\n')
+                    for idx, line in enumerate(docstrings[function]):
+                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
                     code.insert(
-                        line_idx + 2 + len(docstrings[CLASS_DEF.match(code[line_idx])[1]]), f'{CLASS_INDENT}"""\n'
+                        line_idx + 2 + len(docstrings[function]),
+                        f'{indent}"""\n',
                     )
             line_idx += 1
         return code
@@ -215,12 +219,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(args)
-
     converter = DoxygenConverter()
     for path in args.path:
         if os.path.isdir(path):
-            print(parse_dir_path(path))
             for py_file in parse_dir_path(path):
                 converter.convert(py_file, args.new)
         elif os.path.isfile(path):
