@@ -226,6 +226,6 @@ if __name__ == "__main__":
                 converter.convert(py_file, args.new)
         elif os.path.isfile(path):
             if pathlib.Path(path).suffix == ".py":
-                converter.convert(path, args.new)
+                converter.convert(os.path.join(os.getcwd(), path), args.new)
             else:
                 raise ValueError("Not a python file")
