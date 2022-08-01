@@ -68,109 +68,6 @@ class DoxygenConverter:
     """
 
     @staticmethod
-    def __parse_file(file_path: str) -> typing.Tuple[dict, typing.List[str]]:
-        """
-        Parses a Python file to return a dictionary of doxygen comments and a list of the remaining file lines
-
-        Parameters
-        ----------
-        file_path : str
-            Path to Python file to parse
-
-        Returns
-        -------
-        typing.Tuple[dict, typing.List[str]]
-            Doxygen dictionary in the form {"<object-name>": [<doxygen lines>]}
-            Module docstring is stored under the key "module"
-            e.g. {"module": "some docstring", "TestClass": ["summary"], "test_func": ["summary", "@param param1]}
-
-            List of strings for all the other non-doxygen lines of code
-        """
-        docstrings = {}
-        temp = []
-        code = []
-        doxygen_flag = False
-        for line in file_to_array(file_path):
-            if DOXYGEN_START.match(line) and not doxygen_flag:
-                temp.append(DOXYGEN_START.match(line)[2])
-                doxygen_flag = True
-            elif FUNCTION_DEF.match(line) and doxygen_flag:
-                docstrings[FUNCTION_DEF.match(line)[2]] = temp
-                doxygen_flag = False
-                temp = []
-                code.append(line)
-            elif CLASS_DEF.match(line) and doxygen_flag:
-                docstrings[CLASS_DEF.match(line)[2]] = temp
-                doxygen_flag = False
-                temp = []
-                code.append(line)
-            elif line == "\n" and doxygen_flag:
-                docstrings["module"] = temp
-                doxygen_flag = False
-                temp = []
-                code.append(line)
-            elif DECORATOR.match(line) and doxygen_flag:
-                code.append(line)
-            elif doxygen_flag:
-                temp.append(OTHER.match(line)[1])
-            else:
-                code.append(line)
-        print(docstrings)
-        return (docstrings, code)
-
-    @staticmethod
-    def __add_docstrings(docstrings: dict, code: typing.List[str]) -> typing.List[str]:
-        """
-        Takes a dictionary of doxygen and list of strings and returns a list of strings with the converted docstrings
-        added in the relevant locations.
-
-        Parameters
-        ----------
-        docstrings: dict
-            Doxygen dictionary in the form {"<object-name>": [<doxygen lines>]}
-            Module docstring is stored under the key "module"
-            e.g. {"module": "some docstring", "TestClass": ["summary"], "test_func": ["summary", "@param param1]}
-        code: typing.List[str]
-            List of strings for all the other non-doxygen lines of code
-
-        Returns
-        -------
-        typing.List[str]
-            The list of strings representing the code with docstrings added in the correct places
-        """
-        line_idx = 0
-        while line_idx < len(code):
-            if SHEBANG.match(code[line_idx]) and "module" in docstrings:
-                code.insert(line_idx + 2, '"""\n')
-                for idx, line in enumerate(docstrings["module"]):
-                    code.insert(line_idx + 3 + idx, f"{line}\n")
-                code.insert(line_idx + 3 + len(docstrings["module"]), '"""\n')
-            elif FUNCTION_DEF.match(code[line_idx]):
-                indent = FUNCTION_DEF.match(code[line_idx])[1] + "    "
-                function = FUNCTION_DEF.match(code[line_idx])[2]
-                if function in docstrings:
-                    code.insert(line_idx + 1, f'{indent}"""!\n')
-                    for idx, line in enumerate(docstrings[function]):
-                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
-                    code.insert(
-                        line_idx + 2 + len(docstrings[function]),
-                        f'{indent}"""\n',
-                    )
-            elif CLASS_DEF.match(code[line_idx]):
-                indent = CLASS_DEF.match(code[line_idx])[1] + "    "
-                function = CLASS_DEF.match(code[line_idx])[2]
-                if function in docstrings:
-                    code.insert(line_idx + 1, f'{indent}"""!\n')
-                    for idx, line in enumerate(docstrings[function]):
-                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
-                    code.insert(
-                        line_idx + 2 + len(docstrings[function]),
-                        f'{indent}"""\n',
-                    )
-            line_idx += 1
-        return code
-
-    @staticmethod
     def __write_to_file(code: typing.List[str], file_path: str, new: bool):
         """
         Write the list of strings to a file path
@@ -191,7 +88,7 @@ class DoxygenConverter:
             for line in code:
                 result.write(line)
 
-    def convert(self, file_path: str, new: bool):
+    def complete_convert(self, file_path: str, new: bool):
         """
         Converts a Python file with comment Doxygen to docstring Doxygen and either overwrites file or creates new file.
 
@@ -203,8 +100,50 @@ class DoxygenConverter:
             If True then write to a new file called converted_<file_path>
             If False then overwrite the old file
         """
-        docstrings, code = self.__parse_file(file_path)
-        code = self.__add_docstrings(docstrings, code)
+        doxygen = []
+        code = file_to_array(file_path)
+        doxygen_flag = False
+        line_idx = 0
+        while line_idx < len(code):
+            if DOXYGEN_START.match(code[line_idx]) and not doxygen_flag:
+                doxygen.append(DOXYGEN_START.match(code[line_idx])[2])
+                doxygen_flag = True
+                code.pop(line_idx)
+            while doxygen_flag:
+                if DECORATOR.match(code[line_idx]) and doxygen_flag:
+                    line_idx += 1
+                    continue
+                if FUNCTION_DEF.match(code[line_idx]) and doxygen_flag:
+                    indent = FUNCTION_DEF.match(code[line_idx])[1] + "    "
+                    code.insert(line_idx + 1, f'{indent}"""!\n')
+                    for idx, line in enumerate(doxygen):
+                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
+                    code.insert(line_idx + 2 + len(doxygen), f'{indent}"""\n')
+
+                    doxygen_flag = False
+                    doxygen = []
+                elif CLASS_DEF.match(code[line_idx]) and doxygen_flag:
+                    indent = CLASS_DEF.match(code[line_idx])[1] + "    "
+                    code.insert(line_idx + 1, f'{indent}"""!\n')
+                    for idx, line in enumerate(doxygen):
+                        code.insert(line_idx + 2 + idx, f"{indent}{line}\n")
+                    code.insert(line_idx + 2 + len(doxygen), f'{indent}"""\n')
+
+                    doxygen_flag = False
+                    doxygen = []
+                elif code[line_idx] == "\n" and doxygen_flag:
+                    code.insert(line_idx, '"""\n')
+                    for idx, line in enumerate(doxygen):
+                        code.insert(line_idx + 1 + idx, f"{line}\n")
+                    code.insert(line_idx + 1 + len(doxygen), '"""\n')
+
+                    doxygen_flag = False
+                    doxygen = []
+                else:
+                    print(code[line_idx])
+                    doxygen.append(OTHER.match(code[line_idx])[1])
+                    code.pop(line_idx)
+            line_idx += 1
         self.__write_to_file(code, file_path, new)
 
 
@@ -221,9 +160,9 @@ if __name__ == "__main__":
     for path in args.path:
         if os.path.isdir(path):
             for py_file in parse_dir_path(path):
-                converter.convert(py_file, args.new)
+                converter.complete_convert(py_file, args.new)
         elif os.path.isfile(path):
             if pathlib.Path(path).suffix == ".py":
-                converter.convert(os.path.join(os.getcwd(), path), args.new)
+                converter.complete_convert(os.path.join(os.getcwd(), path), args.new)
             else:
                 raise ValueError("Not a python file")
